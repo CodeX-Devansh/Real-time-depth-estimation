@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]>=0.15.0,<0.24.0
+gunicorn
+torch
+torchvision
+torchaudio
+opencv-python-headless
+matplotlib
+Pillow
+aiofiles
+timm
+python-multipart
+# websockets is included with uvicorn[standard]

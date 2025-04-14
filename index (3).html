@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Depth Estimation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+    <style>
+        /* --- PASTE ALL THE PREVIOUS CSS HERE --- */
+        /* (Includes :root, body, background, container, theme-toggle, h1, controls, video-grid, video-container, depth-display-container, #depthMapCanvas, #webcamFeed, #colorBarCanvas, .colorbar-label, footer, responsive styles) */
+         :root {
+            --primary-color: #4F46E5; /* Indigo 600 */
+            --primary-hover: #4338CA; /* Indigo 700 */
+            --secondary-color: #10B981; /* Emerald 500 */
+            --secondary-hover: #059669; /* Emerald 600 */
+            --background: #F9FAFB;     /* Gray 50 */
+            --foreground: #111827;     /* Gray 900 */
+            --card-bg-rgb: 255, 255, 255; /* White */
+            --card-bg-alpha: 0.4;
+            --border-color: #E5E7EB;   /* Gray 200 */
+            --error-color: #EF4444;    /* Red 500 */
+            --icon-color: #6B7280;    /* Gray 500 */
+            --card-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.07), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            --border-radius: 16px;
+            --transition-speed: 0.2s;
+            --blur-amount: 30px;
+            --orb1-color: rgba(59, 130, 246, 0.3);
+            --orb2-color: rgba(168, 85, 247, 0.3);
+            --orb3-color: rgba(139, 92, 246, 0.3);
+        }
+        body.dark-mode {
+            --background: #111827; --foreground: #F9FAFB; --card-bg-rgb: 31, 41, 55;
+            --card-bg-alpha: 0.3; --border-color: #374151; --icon-color: #9CA3AF;
+            --card-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+            --orb1-color: rgba(96, 165, 250, 0.3); --orb2-color: rgba(192, 132, 252, 0.3);
+            --orb3-color: rgba(167, 139, 250, 0.3);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.6;
+            color: var(--foreground); padding: 2rem 1rem; min-height: 100vh;
+            background-color: var(--background); position: relative; overflow-x: hidden;
+            transition: background-color 0.4s ease, color 0.4s ease;
+        }
+        .background-gradient-orbs { position: fixed; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden; z-index: -1; pointer-events: none; }
+        .orb { position: absolute; border-radius: 50%; filter: blur(128px); will-change: transform; transition: background-color 0.8s ease; }
+        .orb-1 { width: 600px; height: 600px; top: -20%; left: -20%; background-color: var(--orb1-color); animation: float 20s ease-in-out infinite; }
+        .orb-2 { width: 500px; height: 500px; top: 40%; right: -15%; background-color: var(--orb2-color); animation: float 25s ease-in-out infinite 3s; }
+        .orb-3 { width: 700px; height: 700px; bottom: -25%; left: 15%; background-color: var(--orb3-color); animation: float 30s ease-in-out infinite 1s; }
+        @keyframes float { 0%, 100% { transform: translate(0, 0) rotate(0deg); } 25% { transform: translate(10%, 10%) rotate(15deg); } 50% { transform: translate(-5%, 15%) rotate(-10deg); } 75% { transform: translate(-15%, -5%) rotate(5deg); } }
+        .container {
+            max-width: 1200px; margin: 0 auto; padding: 2.5rem; border-radius: var(--border-radius);
+            box-shadow: var(--card-shadow); border: 1px solid rgba(var(--card-bg-rgb), 0.2);
+            opacity: 0; animation: slideUp 0.6s ease-out forwards; position: relative; z-index: 1;
+            background-color: rgba(var(--card-bg-rgb), var(--card-bg-alpha)); backdrop-filter: blur(var(--blur-amount));
+            -webkit-backdrop-filter: blur(var(--blur-amount)); transition: background-color 0.4s ease, border-color 0.4s ease, backdrop-filter 0.4s ease;
+        }
+        body.dark-mode .container { border-color: rgba(var(--card-bg-rgb), 0.3); }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .theme-toggle { position: absolute; top: 1.5rem; right: 1.5rem; background: none; background-color: rgba(var(--card-bg-rgb), calc(var(--card-bg-alpha) + 0.1)); border: 1px solid rgba(var(--card-bg-rgb), 0.2); border-radius: 50%; cursor: pointer; padding: 0.5rem; display: flex; align-items: center; justify-content: center; color: var(--icon-color); transition: all var(--transition-speed) ease; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); z-index: 5; }
+        .theme-toggle:hover { border-color: var(--primary-color); color: var(--primary-color); background-color: rgba(var(--card-bg-rgb), calc(var(--card-bg-alpha) + 0.15)); }
+        .theme-toggle svg { width: 1.25rem; height: 1.25rem; }
+        .dark-mode .theme-toggle .feather-moon { display: none; } body:not(.dark-mode) .theme-toggle .feather-sun { display: none; }
+        h1 { text-align: center; font-size: 2.5rem; font-weight: 700; margin-bottom: 1.5rem; margin-top: 1rem; color: var(--foreground); letter-spacing: -0.025em; }
+
+        /* --- CONTROLS & STATUS --- */
+        .controls-section { text-align: center; margin-bottom: 1.5rem; }
+        .options-row { display: flex; justify-content: center; align-items: center; gap: 1rem; flex-wrap: wrap; }
+        .colormap-select-wrapper label { font-size: 0.875rem; color: var(--foreground); opacity: 0.9; margin-right: 0.5rem; }
+        #colormapSelect { padding: 0.5rem 0.75rem; border-radius: var(--border-radius); border: 1px solid var(--border-color); background-color: rgba(var(--card-bg-rgb), calc(var(--card-bg-alpha) + 0.1)); color: var(--foreground); font-family: inherit; font-size: 0.875rem; cursor: pointer; transition: border-color var(--transition-speed) ease, background-color 0.3s ease; }
+        #colormapSelect:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2); }
+        .status-indicator { margin-top: 1rem; min-height: 2.5rem; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 0.5rem; }
+        .status-text { font-size: 0.9rem; opacity: 0.8; }
+        .spinner { width: 1.5rem; height: 1.5rem; border: 3px solid var(--border-color); border-top: 3px solid var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite; display: none; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error-message { color: var(--error-color); font-weight: 500; display: none; padding: 0.75rem 1rem; background-color: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: var(--border-radius); text-align: center; max-width: 400px; margin: 0 auto; }
+        .error-message i { margin-right: 0.5rem; vertical-align: middle; }
+
+        /* --- VIDEO DISPLAY --- */
+        .video-grid {
+            margin-top: 1.5rem; display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); /* Slightly larger min size */
+            gap: 1.5rem; align-items: start;
+        }
+        .video-container {
+            padding: 1rem; border-radius: var(--border-radius); border: 1px solid var(--border-color);
+            box-shadow: var(--card-shadow); background-color: rgba(var(--card-bg-rgb), 0.2);
+            display: flex; flex-direction: column; /* Align title and content vertically */
+        }
+         .video-container h2 {
+            font-size: 1.1rem; font-weight: 600; margin-bottom: 0.75rem; text-align: center;
+            flex-shrink: 0; /* Prevent title from shrinking */
+        }
+        /* Container specifically for depth map + color bar */
+        .depth-display-container {
+            display: flex; /* Arrange depth map and color bar side-by-side */
+            gap: 0.80rem; /* Space between depth map and color bar */
+            flex-grow: 1; /* Allow this container to grow */
+            min-height: 1; /* Important for flex children with height:auto */
+        }
+        #depthMapCanvas {
+            flex-grow: 1; /* Allow depth map to take up available space */
+            width: auto; /* Let flexbox handle width */
+            max-width: 100%; /* Prevent overflow */
+            height: auto; /* Maintain aspect ratio */
+            display: block;
+            border-radius: calc(var(--border-radius) - 8px);
+            background-color: rgba(var(--card-bg-rgb), 0.4);
+            border: 1px solid var(--border-color);
+        }
+        #webcamFeed {
+            width: 100%; height: auto; display: block;
+            border-radius: calc(var(--border-radius) - 8px);
+            background-color: rgba(var(--card-bg-rgb), 0.4);
+            border: 1px solid var(--border-color);
+            transform: scaleX(-1); /* Mirror image */
+        }
+        /* --- Color Bar Canvas --- */
+        #colorBarCanvas {
+            width: 50px; /* Fixed width for the color bar */
+            height: 100px; /* Start with a small fixed height */
+            max-height: 100%; /* Prevent overflow if depth map is short */
+            display: block;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            flex-shrink: 0; /* Prevent color bar from shrinking */
+            position: relative; /* Needed for positioning labels */
+        }
+        .colorbar-label {
+             position: absolute;
+             right: calc(100% + 5px); /* Position labels to the left of the bar */
+             font-size: 0.65rem; /* Smaller font size */
+             color: var(--foreground);
+             opacity: 0.8;
+             background-color: rgba(var(--card-bg-rgb), 0.3); /* Slight background for readability */
+             padding: 1px 3px;
+             border-radius: 2px;
+             white-space: nowrap;
+        }
+        .colorbar-label.top { top: 2px; }
+        .colorbar-label.bottom { bottom: 2px; }
+
+
+        /* --- FOOTER --- */
+        .page-footer { text-align: center; margin-top: 3rem; padding: 1rem 0; font-size: 0.875rem; color: var(--foreground); opacity: 0.6; transition: opacity 0.4s ease, color 0.4s ease; }
+
+        @media (max-width: 768px) {
+             .video-grid { grid-template-columns: 1fr; } /* Stack vertically */
+             .depth-display-container { flex-direction: column; /* Stack colorbar below on mobile */ }
+             #colorBarCanvas { width: 100%; height: 25px; margin-top: 0.5rem;} /* Horizontal bar */
+             .colorbar-label { /* Adjust label position for horizontal */
+                 top: calc(100% + 3px); /* Below the bar */
+                 right: auto; /* Reset right positioning */
+             }
+             .colorbar-label.top { left: 2px; } /* Left align top label */
+             .colorbar-label.bottom { right: 2px; text-align: right;} /* Right align bottom label */
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Background Orbs Container -->
+    <div class="background-gradient-orbs"> <div class="orb orb-1"></div> <div class="orb orb-2"></div> <div class="orb orb-3"></div> </div>
+
+    <!-- Main Content Container -->
+    <div class="container">
+        <!-- Theme Toggle Button -->
+        <button id="themeToggle" class="theme-toggle" title="Toggle Theme"> <i data-feather="moon"></i> <i data-feather="sun"></i> </button>
+
+        <h1>Real-time Monocular Depth Estimation</h1>
+
+        <div class="controls-section">
+            <div class="options-row">
+                <div class="colormap-select-wrapper">
+                    <label for="colormapSelect">Colormap:</label>
+                    <select id="colormapSelect" name="colormap">
+                        <option value="viridis">Viridis</option>
+                        <option value="plasma" selected>Plasma</option>
+                        <option value="magma">Magma</option>
+                        <option value="inferno">Inferno</option>
+                        <option value="cividis">Cividis</option>
+                        <option value="gray">Grayscale</option>
+                        <option value="jet">Jet</option>
+                        <option value="hot">Hot</option>
+                        <option value="cool">Cool</option>
+                    </select>
+                </div>
+            </div>
+            <div class="status-indicator">
+                <div id="loadingSpinner" class="spinner"></div>
+                <span id="statusText" class="status-text">Initializing...</span>
+                <div id="errorMessage" class="error-message"></div>
+            </div>
+        </div>
+
+        <!-- Grid for Live Feed and Depth Map -->
+        <div class="video-grid">
+            <div class="video-container">
+                <h2>Live Camera Feed</h2>
+                <video id="webcamFeed" playsinline muted autoplay></video>
+            </div>
+            <div class="video-container">
+                 <h2>Estimated Depth Map</h2>
+                 <div class="depth-display-container">
+                      <canvas id="depthMapCanvas"></canvas>
+                      <div style="position: relative;"> <!-- Wrapper for color bar and labels -->
+                          <canvas id="colorBarCanvas"></canvas>
+                          <!-- Labels will be added/removed dynamically by JS -->
+                      </div>
+                 </div>
+            </div>
+        </div>
+
+    </div> <!-- End Container -->
+
+    <footer class="page-footer"> || Made by Devansh Gupta || </footer>
+
+    <script>
+        // --- Feather Icons ---
+        // Delay feather replace slightly to ensure library is loaded
+        setTimeout(() => {
+             try { feather.replace(); } catch (e) { console.warn("Feather icons library not ready yet or failed to load."); }
+        }, 500); // 500ms delay, adjust if needed
+
+
+        // --- Element References ---
+        const videoElement = document.getElementById('webcamFeed');
+        const canvasElement = document.getElementById('depthMapCanvas');
+        const depthCtx = canvasElement.getContext('2d');
+        const colormapSelect = document.getElementById('colormapSelect');
+        const themeToggle = document.getElementById('themeToggle');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const statusText = document.getElementById('statusText');
+        const errorMessage = document.getElementById('errorMessage');
+        // --- Color Bar Elements ---
+        const colorBarCanvas = document.getElementById('colorBarCanvas');
+        const colorBarCtx = colorBarCanvas ? colorBarCanvas.getContext('2d') : null; // Check if canvas exists
+        const colorBarWrapper = colorBarCanvas ? colorBarCanvas.parentElement : null; // Check if parent exists
+
+        // --- State & Config ---
+        let ws; // WebSocket connection
+        let sendIntervalId = null;
+        const TARGET_FPS = 5;
+        const SEND_INTERVAL_MS = 1000 / TARGET_FPS;
+        const FRAME_QUALITY = 0.6;
+        const FRAME_RESIZE_FACTOR = 0.5;
+
+        // --- Colormap Definitions ---
+        const colormapStops = {
+            viridis: ['#440154', '#3b528b', '#21908d', '#5dc863', '#fde725'], plasma:  ['#0d0887', '#6a00a8', '#b12a90', '#e16462', '#fca636', '#f0f921'],
+            magma:   ['#000004', '#3b0f70', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf'], inferno: ['#000004', '#50006f', '#ac1768', '#ed6925', '#fcfdbf'],
+            cividis: ['#00204d', '#414d6b', '#7c7b78', '#b9ac70', '#ffea46'], jet:     ['#000080', '#0080ff', '#00ffff', '#80ff80', '#ffff00', '#ff8000', '#ff0000'],
+            hot:     ['#000000', '#800000', '#ff0000', '#ff8000', '#ffff00', '#ffffff'], cool:    ['#00ffff', '#8080ff', '#ff00ff'], gray:    ['#000000', '#ffffff']
+        };
+
+        // --- UI Functions ---
+        function showStatus(message, isLoading = false) { statusText.textContent = message; loadingSpinner.style.display = isLoading ? 'block' : 'none'; errorMessage.style.display = 'none'; }
+        function showError(message) { errorMessage.textContent = message; errorMessage.style.display = 'block'; statusText.textContent = 'Error'; loadingSpinner.style.display = 'none'; stopSendingFrames(); if (ws && ws.readyState === WebSocket.OPEN) { ws.close(); } }
+
+        // --- Draw Color Bar Function (Simplified Error Handling) ---
+        function drawColorBar(colormapName) {
+            // Only proceed if canvas and context were found
+            if (!colorBarCanvas || !colorBarCtx || !colorBarWrapper) {
+                console.warn("Color bar elements not ready, skipping draw.");
+                return;
+            }
+            try {
+                const stops = colormapStops[colormapName.toLowerCase()] || colormapStops.plasma;
+                const ctx = colorBarCtx;
+                const canvas = colorBarCanvas;
+                const isHorizontal = canvas.width > canvas.height;
+                let gradient = isHorizontal ? ctx.createLinearGradient(0, 0, canvas.width, 0) : ctx.createLinearGradient(0, canvas.height, 0, 0);
+                const numStops = stops.length;
+                stops.forEach((color, index) => { const position = (numStops > 1) ? (index / (numStops - 1)) : 0.5; gradient.addColorStop(position, color); });
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                colorBarWrapper.querySelectorAll('.colorbar-label').forEach(el => el.remove());
+                const topLabel = document.createElement('span'); topLabel.className = 'colorbar-label top'; topLabel.textContent = 'Closer';
+                const bottomLabel = document.createElement('span'); bottomLabel.className = 'colorbar-label bottom'; bottomLabel.textContent = 'Farther';
+                colorBarWrapper.appendChild(topLabel); colorBarWrapper.appendChild(bottomLabel);
+            } catch (e) {
+                console.error("Error drawing color bar:", e); // Log errors specifically from this function
+            }
+        }
+
+        // --- Webcam & WebSocket Logic ---
+        async function setupCamera() {
+            console.log("DEBUG: setupCamera function started.");
+            showStatus('Requesting camera access...', true);
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { showError("getUserMedia() is not supported by your browser."); return; }
+            console.log("DEBUG: Attempting to call getUserMedia...");
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                console.log("DEBUG: getUserMedia successful, stream received.");
+                videoElement.srcObject = stream;
+                videoElement.onloadedmetadata = () => { console.log("DEBUG: Video metadata loaded, connecting WebSocket."); showStatus('Camera ready. Connecting to server...', true); connectWebSocket(); };
+            } catch (err) { console.error("DEBUG: Error in getUserMedia catch block:", err); console.error("Error accessing webcam:", err); if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") { showError('Camera access denied. Please grant permission and refresh.'); } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError"){ showError('No camera found. Please ensure a camera is connected.'); } else { showError(`Error accessing camera: ${err.name} - ${err.message}`); } }
+        }
+
+        function connectWebSocket() {
+            console.log("DEBUG: connectWebSocket function started.");
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'; const wsUrl = `${wsProtocol}//${window.location.host}/ws`; console.log(`Connecting to WebSocket: ${wsUrl}`);
+            ws = new WebSocket(wsUrl);
+            ws.onopen = () => { console.log("WebSocket Connected"); showStatus('Connected. Streaming depth map...'); startSendingFrames(); };
+            ws.onmessage = (event) => {
+                const depthMapDataUrl = event.data; const img = new Image();
+                img.onload = () => {
+                    if (canvasElement && depthCtx) { // Check main canvas exists
+                        canvasElement.width = img.width; canvasElement.height = img.height;
+                        depthCtx.drawImage(img, 0, 0, canvasElement.width, canvasElement.height);
+                        // Adjust and draw color bar *after* main canvas is ready
+                         if (colorBarCanvas) { // Check color bar canvas exists
+                             colorBarCanvas.height = canvasElement.clientHeight || 300; // Use clientHeight or fallback
+                             drawColorBar(colormapSelect.value);
+                         }
+                    } else { console.error("Depth map canvas element missing."); }
+                };
+                img.onerror = () => { console.error("Error loading received image data."); };
+                img.src = depthMapDataUrl;
+            };
+            ws.onclose = (event) => { console.log(`WebSocket Disconnected: Code=${event.code}, Reason='${event.reason}'`); if (!event.wasClean) { if (!errorMessage.style.display || errorMessage.textContent === '') { showError(`Server disconnected unexpectedly (Code: ${event.code}). Please refresh.`); } } else { showStatus('Disconnected.'); } stopSendingFrames(); };
+            ws.onerror = (error) => { console.error("WebSocket Error Event:", error); showError('WebSocket connection error. Please check server logs and refresh.'); stopSendingFrames(); };
+        }
+
+        function startSendingFrames() { console.log("DEBUG: startSendingFrames called."); if (sendIntervalId) clearInterval(sendIntervalId); sendFrame(); sendIntervalId = setInterval(sendFrame, SEND_INTERVAL_MS); console.log(`Started sending frames every ${SEND_INTERVAL_MS}ms`); }
+        function stopSendingFrames() { console.log("DEBUG: stopSendingFrames called."); if (sendIntervalId) { clearInterval(sendIntervalId); sendIntervalId = null; console.log("Stopped sending frames."); } }
+
+        function sendFrame() {
+            const isVideoReady = videoElement.readyState >= videoElement.HAVE_METADATA && videoElement.videoWidth > 0 && videoElement.videoHeight > 0; if (!ws || ws.readyState !== WebSocket.OPEN || !isVideoReady) { return; }
+            try {
+                const tempCanvas = document.createElement('canvas'); const targetWidth = videoElement.videoWidth * FRAME_RESIZE_FACTOR; const targetHeight = videoElement.videoHeight * FRAME_RESIZE_FACTOR;
+                tempCanvas.width = Math.max(64, Math.round(targetWidth)); tempCanvas.height = Math.max(64, Math.round(targetHeight));
+                const tempCtx = tempCanvas.getContext('2d'); tempCtx.drawImage(videoElement, 0, 0, tempCanvas.width, tempCanvas.height);
+                const frameDataUrl = tempCanvas.toDataURL('image/jpeg', FRAME_QUALITY); const selectedColormap = colormapSelect.value;
+                const payload = JSON.stringify({ frameDataUrl: frameDataUrl, colormap: selectedColormap });
+                if (ws.bufferedAmount === 0) { ws.send(payload); }
+            } catch (error) { console.error("Error capturing or sending frame:", error); }
+        }
+
+        // --- Theme Toggle Logic ---
+        function setTheme(theme) {
+            localStorage.setItem('theme', theme);
+            if (theme === 'dark') { document.body.classList.add('dark-mode'); } else { document.body.classList.remove('dark-mode'); }
+            // Only call feather.replace if feather exists
+            if (typeof feather !== 'undefined') {
+                 try { feather.replace(); } catch(e) { console.warn("Error calling feather.replace:", e); }
+            }
+            // We don't need to redraw color bar on theme change unless label colors depend heavily on theme vars
+            // drawColorBar(colormapSelect.value); // Commented out for simplicity
+        }
+
+        themeToggle.addEventListener('click', () => { const currentIsDark = document.body.classList.contains('dark-mode'); setTheme(currentIsDark ? 'light' : 'dark'); });
+
+        // --- Initialization ---
+        window.addEventListener('load', () => {
+            console.log("DEBUG: Window loaded event fired.");
+            // Apply initial theme FIRST
+            const savedTheme = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            setTheme(savedTheme ? savedTheme : (prefersDark ? 'dark' : 'light')); // Apply theme before drawing bar
+
+            // Then setup camera
+            setupCamera();
+
+            // Then draw initial color bar (if elements exist)
+             if (colorBarCanvas && colormapSelect) {
+                 console.log("DEBUG: Attempting initial color bar draw.");
+                 drawColorBar(colormapSelect.value);
+             } else {
+                 console.warn("Initial color bar draw skipped - elements not ready.");
+             }
+        });
+
+        // --- Event Listener for Colormap Change ---
+        colormapSelect.addEventListener('change', (event) => {
+            // Check function exists before calling
+            if (typeof drawColorBar === 'function') {
+                 drawColorBar(event.target.value); // Redraw color bar when selection changes
+            }
+        });
+
+        // Apply initial theme logic moved to window.onload to ensure correct order
+
+    </script>
+</body>
+</html>
